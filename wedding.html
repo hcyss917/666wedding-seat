@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>婚禮座位安排工具</title>
+
+<style>
+body { margin:0; font-family:Arial; display:flex; height:100vh; }
+
+#guestList {
+  width:240px; background:#f5f7fb; padding:10px; overflow-y:auto;
+}
+
+.guest {
+  background:white; padding:6px; margin:5px 0; border-radius:6px;
+  cursor:grab; text-align:center; border:1px solid #ddd; font-size:12px;
+}
+
+#hall { flex:1; position:relative; background:#f7f7f7; }
+
+.table-wrap { position:absolute; width:180px; height:180px; }
+
+.table {
+  width:110px; height:110px; background:#cfe8ff; border-radius:50%;
+  text-align:center; line-height:110px; font-weight:bold;
+  position:absolute; top:35px; left:35px;
+}
+
+.seat {
+  width:34px; height:34px; background:#e6f2ff; border-radius:50%;
+  position:absolute; border:1px solid #bbb;
+  display:flex; align-items:center; justify-content:center;
+}
+
+.seat .guest {
+  font-size:9px; padding:0; margin:0; border:none;
+  background:transparent; white-space:nowrap;
+}
+</style>
+</head>
+
+<body>
+
+<div id="guestList">
+  <h3>賓客名單</h3>
+
+  <input id="name" placeholder="輸入名字">
+  <button onclick="addGuest()">新增</button>
+
+  <textarea id="bulkInput" placeholder="貼上Excel名單" style="width:100%;height:80px;"></textarea>
+  <button onclick="bulkAdd()">批次匯入</button>
+
+  <hr>
+
+  <div id="unassigned"
+       ondrop="dropToList(event)"
+       ondragover="allowDrop(event)">
+  </div>
+</div>
+
+<div id="hall"></div>
+
+<script>
+
+// ===== 桌位 =====
+const tables = [
+  {n:1,x:100,y:100},{n:3,x:100,y:300},{n:5,x:100,y:500},
+  {n:2,x:300,y:200},{n:4,x:300,y:400},{n:6,x:300,y:650},
+  {n:7,x:950,y:100},{n:9,x:950,y:300},{n:11,x:950,y:500},
+  {n:8,x:750,y:200},{n:10,x:750,y:400},{n:12,x:750,y:650},
+  {n:"主",x:550,y:80}
+];
+
+const hall = document.getElementById("hall");
+
+// ===== 建桌 =====
+tables.forEach(t => {
+  const wrap = document.createElement("div");
+  wrap.className="table-wrap";
+  wrap.style.left=t.x+"px";
+  wrap.style.top=t.y+"px";
+
+  const table=document.createElement("div");
+  table.className="table";
+  table.innerText=t.n;
+  wrap.appendChild(table);
+
+  const cx=90, cy=90, r=75;
+
+  for(let i=0;i<10;i++){
+    const angle=(i/10)*2*Math.PI;
+
+    const seat=document.createElement("div");
+    seat.className="seat";
+
+    seat.dataset.table=t.n;
+    seat.dataset.index=i;
+
+    seat.style.left=(cx+r*Math.cos(angle)-17)+"px";
+    seat.style.top=(cy+r*Math.sin(angle)-17)+"px";
+
+    seat.ondrop=dropToSeat;
+    seat.ondragover=allowDrop;
+
+    wrap.appendChild(seat);
+  }
+
+  hall.appendChild(wrap);
+});
+
+// ===== 拖曳 =====
+function allowDrop(e){ e.preventDefault(); }
+
+function drag(e){
+  e.dataTransfer.setData("id", e.target.id);
+}
+
+// 放到座位
+function dropToSeat(e){
+  e.preventDefault();
+
+  const id=e.dataTransfer.getData("id");
+  const guest=document.getElementById(id);
+  const target=e.target;
+
+  if(target.firstChild){
+    document.getElementById("unassigned").appendChild(target.firstChild);
+  }
+
+  target.appendChild(guest);
+
+  saveData();
+}
+
+// 放回左邊
+function dropToList(e){
+  e.preventDefault();
+
+  const id=e.dataTransfer.getData("id");
+  const guest=document.getElementById(id);
+
+  document.getElementById("unassigned").appendChild(guest);
+
+  saveData();
+}
+
+// ===== 建立賓客 =====
+let id=0;
+
+function createGuest(name){
+  const g=document.createElement("div");
+  g.className="guest";
+  g.draggable=true;
+  g.ondragstart=drag;
+  g.innerText=name;
+  g.id="g"+id++;
+
+  g.ondblclick=function(){
+    if(confirm("刪除？")){
+      g.remove();
+      saveData();
+    }
+  };
+
+  return g;
+}
+
+// ===== 新增 =====
+function addGuest(){
+  const input=document.getElementById("name");
+  if(!input.value) return;
+
+  const g=createGuest(input.value);
+  document.getElementById("unassigned").appendChild(g);
+
+  input.value="";
+  saveData();
+}
+
+// Enter新增
+document.getElementById("name").addEventListener("keydown", e=>{
+  if(e.key==="Enter") addGuest();
+});
+
+// 批次匯入
+function bulkAdd(){
+  const text=document.getElementById("bulkInput").value;
+  const names=text.split(/\n|,|\t/);
+
+  names.forEach(n=>{
+    if(n.trim()){
+      const g=createGuest(n.trim());
+      document.getElementById("unassigned").appendChild(g);
+    }
+  });
+
+  document.getElementById("bulkInput").value="";
+  saveData();
+}
+
+// ===== 儲存 =====
+function saveData(){
+  const data={
+    unassigned:[],
+    seats:[]
+  };
+
+  document.querySelectorAll("#unassigned .guest").forEach(g=>{
+    data.unassigned.push(g.innerText);
+  });
+
+  document.querySelectorAll(".seat").forEach(seat=>{
+    if(seat.firstChild){
+      data.seats.push({
+        table:seat.dataset.table,
+        index:seat.dataset.index,
+        name:seat.firstChild.innerText
+      });
+    }
+  });
+
+  localStorage.setItem("wedding",JSON.stringify(data));
+}
+
+// ===== 載入 =====
+function loadData(){
+  const data=JSON.parse(localStorage.getItem("wedding")||"{}");
+
+  if(data.unassigned){
+    data.unassigned.forEach(n=>{
+      const g=createGuest(n);
+      document.getElementById("unassigned").appendChild(g);
+    });
+  }
+
+  if(data.seats){
+    data.seats.forEach(s=>{
+      const seat=document.querySelector(
+        `.seat[data-table="${s.table}"][data-index="${s.index}"]`
+      );
+      if(seat){
+        const g=createGuest(s.name);
+        seat.appendChild(g);
+      }
+    });
+  }
+}
+
+loadData();
+
+</script>
+
+</body>
+</html>
